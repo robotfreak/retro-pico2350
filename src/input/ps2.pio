@@ -1,0 +1,42 @@
+; PS/2 device receiver (keyboard or mouse), device-to-host direction only.
+;
+; PS/2 frames are 11 bits, LSB first, idle-high, clocked by the DEVICE:
+;   1 start bit (0), 8 data bits, 1 odd-parity bit, 1 stop bit (1)
+; Data changes while clock is high and is valid to sample on the falling
+; edge of clock. We only care about the 8 data bits here; parity and the
+; stop bit are skipped, and the start bit is just used for frame sync.
+;
+; Pin mapping (set via sm_config_set_in_pins): base pin = DATA, base+1 = CLOCK.
+
+.program ps2_rx
+
+.wrap_target
+    wait 0 pin 1        ; wait for device to pull CLOCK low (start bit present)
+    wait 1 pin 1
+    set x, 7            ; 8 data bits to receive
+bitloop:
+    wait 0 pin 1        ; falling edge of clock = data valid
+    in pins, 1          ; sample DATA (bit 0 of the pin group)
+    wait 1 pin 1
+    jmp x-- bitloop
+    wait 0 pin 1        ; parity bit, discarded
+    wait 1 pin 1
+    wait 0 pin 1        ; stop bit, discarded
+    wait 1 pin 1
+.wrap
+
+% c-sdk {
+static inline void ps2_rx_program_init(PIO pio, uint sm, uint offset, uint data_pin) {
+    pio_sm_config c = ps2_rx_program_get_default_config(offset);
+    sm_config_set_in_pins(&c, data_pin);
+    // Shift right, autopush every 8 bits (one scan code per FIFO entry).
+    sm_config_set_in_shift(&c, true, true, 8);
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
+    // PS/2 clock is at most ~16.7 kHz; 16 SM cycles per device clock gives
+    // plenty of margin for sampling the falling/rising edges reliably.
+    float div = (float)clock_get_hz(clk_sys) / (16 * 16700);
+    sm_config_set_clkdiv(&c, div);
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

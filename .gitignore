@@ -1,0 +1,19 @@
+# Build output
+build/
+build-*/
+*.uf2
+*.elf
+*.bin
+*.hex
+*.map
+*.dis
+
+# External dependency (fetched separately, see README.md)
+third_party/
+
+# Editor / OS cruft
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
