@@ -1,9 +1,10 @@
 #include "ps2kbd.h"
-#include "ps2.pio.h"
 
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
+
+#include "ps2.pio.h"
 
 static PIO kbd_pio;
 static uint kbd_sm;

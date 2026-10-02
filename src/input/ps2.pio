@@ -26,6 +26,9 @@ bitloop:
 .wrap
 
 % c-sdk {
+#include "hardware/clocks.h" // for clock_get_hz(clk_sys) below - self-contained
+                              // regardless of include order in the caller's .c file
+
 static inline void ps2_rx_program_init(PIO pio, uint sm, uint offset, uint data_pin) {
     pio_sm_config c = ps2_rx_program_get_default_config(offset);
     sm_config_set_in_pins(&c, data_pin);

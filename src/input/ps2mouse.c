@@ -1,10 +1,11 @@
 #include "ps2mouse.h"
-#include "ps2.pio.h"
 
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
 #include "pico/time.h"
+
+#include "ps2.pio.h"
 
 static PIO mouse_pio;
 static uint mouse_sm;
