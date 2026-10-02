@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "pico/types.h" // for the "uint" typedef used below
 
 // Optional PS/2 mouse driver. Host-initiates "enable data reporting" over
 // bit-banged GPIO (required so the mouse actually streams movement data),

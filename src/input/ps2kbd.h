@@ -9,6 +9,7 @@
 // shifting, or a dedicated level shifter, since the Pico is not 5V tolerant).
 
 #include <stdint.h>
+#include "pico/types.h" // for the "uint" typedef used below
 
 // pio: 0 or 1 (which PIO block to use)
 // data_gpio: GPIO number of the KBD DATA line; CLOCK must be data_gpio+1
