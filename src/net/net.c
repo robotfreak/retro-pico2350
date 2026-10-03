@@ -230,6 +230,7 @@ bool net_telnet_session(const char *host, uint16_t port) {
     bool pending_cr = false;
 
     while (!st.closed) {
+        dvi_cursor_tick();
         int c = kbd_getc_nonblock();
         if (c == 27) break; // ESC quits back to BASIC
         if (c >= 0) {

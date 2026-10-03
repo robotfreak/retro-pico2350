@@ -28,3 +28,8 @@ uint8_t dvi_rgb332(uint8_t r, uint8_t g, uint8_t b);
 
 // Current cursor column (0-based), useful for PRINT tab-zone alignment.
 int dvi_get_col(void);
+
+// Call regularly (e.g. from an input-wait loop) to blink the text cursor.
+// Cheap to call often: it only does anything once the blink interval has
+// elapsed.
+void dvi_cursor_tick(void);

@@ -61,6 +61,17 @@ target_link_libraries(retro_pico2350
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico
 )
 
+# The pico-sdk default core0 stack is only 2KB (PICO_STACK_SIZE). That's
+# tight even without WiFi; combined with the cyw43/lwIP background IRQ
+# (threadsafe_background) calling back into lwIP/DHCP/TCP processing on top
+# of whatever our own BASIC interpreter's call depth happens to be, it can
+# overflow and hard-fault a few seconds into a WiFi session. 16KB gives a
+# generous margin - RAM is not tight here (the 640x480 framebuffer is
+# static/global, not on the stack).
+target_compile_definitions(retro_pico2350 PRIVATE
+    PICO_STACK_SIZE=0x4000
+)
+
 # USB stdio off (we drive our own PS/2 keyboard), UART stdio off by default too.
 # Enable UART stdio for debug printf over the Pico's UART0 (GP0/GP1).
 pico_enable_stdio_usb(retro_pico2350 0)

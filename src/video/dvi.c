@@ -15,6 +15,7 @@
 //   GP16 D2+  GP17 D2-
 //   GP18 D1+  GP19 D1-
 
+#include <stdbool.h>
 #include <string.h>
 
 #include "dvi.h"
@@ -27,6 +28,7 @@
 #include "hardware/structs/hstx_ctrl.h"
 #include "hardware/structs/hstx_fifo.h"
 #include "pico/platform.h"
+#include "pico/time.h"
 
 // ----------------------------------------------------------------------------
 // DVI timing constants (640x480 @ 60 Hz, from the official HSTX example)
@@ -155,6 +157,13 @@ static int cursor_row = 0;
 static uint8_t cur_fg = 0;
 static uint8_t cur_bg = 0;
 
+// Blinking cursor. The cursor cell is always the "not yet written" position
+// right after the last character, so it's safe to just paint the whole cell
+// solid (on) or background (off) - there is never real content under it.
+#define CURSOR_BLINK_MS 500
+static bool cursor_shown = false;    // true if a solid block is currently drawn
+static absolute_time_t next_blink;
+
 uint8_t dvi_rgb332(uint8_t r, uint8_t g, uint8_t b) {
     return (r & 0xc0) >> 6 | (g & 0xe0) >> 3 | (b & 0xe0) >> 0;
 }
@@ -186,6 +195,25 @@ static void draw_char_at(int col, int row, char c, uint8_t fg, uint8_t bg) {
     }
 }
 
+static void draw_cursor_cell(bool on) {
+    uint8_t color = on ? cur_fg : cur_bg;
+    int x0 = cursor_col * CHAR_CELL_W;
+    int y0 = cursor_row * CHAR_CELL_H;
+    for (int y = 0; y < CHAR_CELL_H; y++) {
+        memset(&framebuf[y0 + y][x0], color, CHAR_CELL_W);
+    }
+}
+
+// Retracts the cursor block (if currently drawn) before the cursor moves or
+// the screen content changes, so it never gets left behind as a stray lit
+// cell. Must be called before cursor_col/cursor_row change.
+static void hide_cursor(void) {
+    if (cursor_shown) {
+        draw_cursor_cell(false);
+        cursor_shown = false;
+    }
+}
+
 static void scroll_console(void) {
     memmove(&framebuf[0][0], &framebuf[CHAR_CELL_H][0],
             (MODE_V_ACTIVE_LINES - CHAR_CELL_H) * MODE_H_ACTIVE_PIXELS);
@@ -197,6 +225,8 @@ void dvi_clear(void) {
     memset(framebuf, cur_bg, sizeof(framebuf));
     cursor_col = 0;
     cursor_row = 0;
+    cursor_shown = false; // already blank, nothing to retract
+    next_blink = make_timeout_time_ms(CURSOR_BLINK_MS);
 }
 
 static void newline(void) {
@@ -209,6 +239,7 @@ static void newline(void) {
 }
 
 void dvi_putc(char c) {
+    hide_cursor(); // about to change cursor_col/row and/or cell content
     switch (c) {
     case '\n':
         newline();
@@ -238,6 +269,13 @@ void dvi_puts(const char *s) {
 
 int dvi_get_col(void) {
     return cursor_col;
+}
+
+void dvi_cursor_tick(void) {
+    if (!time_reached(next_blink)) return;
+    cursor_shown = !cursor_shown;
+    draw_cursor_cell(cursor_shown);
+    next_blink = make_timeout_time_ms(CURSOR_BLINK_MS);
 }
 
 // ----------------------------------------------------------------------------

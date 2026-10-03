@@ -84,6 +84,14 @@ Keine zusätzliche Verdrahtung nötig — der WLAN-Chip ist auf dem Pico 2 W
 bereits verbaut und intern an GPIO 23/24/25/29 angebunden (deshalb sind diese
 vier Pins für eigene Projekte nicht mehr frei).
 
+**Hinweis Stack-Größe:** Der Pico-SDK-Standard-Stack für Core 0 ist nur 2KB
+groß. In Kombination mit WLAN (lwIP/CYW43-Hintergrundverarbeitung läuft per
+Interrupt oben drauf auf dem, was der BASIC-Interpreter gerade an Aufruftiefe
+belegt) reicht das oft nicht und führt zu einem Stack-Overflow/Absturz nach
+einigen Sekunden WLAN-Betrieb — ein bekanntes Muster bei Pico-W-Projekten.
+`CMakeLists.txt` setzt deshalb `PICO_STACK_SIZE=0x4000` (16KB); RAM ist dafür
+reichlich vorhanden, da der Framebuffer statisch (nicht auf dem Stack) liegt.
+
 **Wichtig — Pegel:** PS/2-Tastaturen/Mäuse arbeiten mit 5 V-Logik, der Pico
 ist aber nur 3,3 V-tolerant. Nicht direkt verbinden! Entweder einen echten
 Pegelwandler (Level Shifter) verwenden, oder die verbreitete einfache Lösung:

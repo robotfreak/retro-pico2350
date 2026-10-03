@@ -1,4 +1,5 @@
 #include "ps2kbd.h"
+#include "dvi.h"
 
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
@@ -147,6 +148,7 @@ int kbd_getc_nonblock(void) {
 char kbd_getc_blocking(void) {
     int c;
     while ((c = kbd_getc_nonblock()) < 0) {
+        dvi_cursor_tick();
         tight_loop_contents();
     }
     return (char)c;
