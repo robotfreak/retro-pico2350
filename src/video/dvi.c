@@ -356,6 +356,12 @@ void dvi_init(void) {
     dma_hw->ints0 = (1u << DMACH_PING) | (1u << DMACH_PONG);
     dma_hw->inte0 = (1u << DMACH_PING) | (1u << DMACH_PONG);
     irq_set_exclusive_handler(DMA_IRQ_0, dma_irq_handler);
+    // Belt-and-braces: make sure nothing (e.g. the cyw43/lwIP background
+    // work IRQ, which the SDK already defaults to the lowest priority) can
+    // ever delay refilling the HSTX FIFO. Scanline timing is tight (~32us
+    // at 480p60) so this IRQ must always win if two happen to be pending
+    // at once.
+    irq_set_priority(DMA_IRQ_0, PICO_HIGHEST_IRQ_PRIORITY);
     irq_set_enabled(DMA_IRQ_0, true);
 
     bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_W_BITS | BUSCTRL_BUS_PRIORITY_DMA_R_BITS;
