@@ -65,11 +65,18 @@ target_link_libraries(retro_pico2350
 # tight even without WiFi; combined with the cyw43/lwIP background IRQ
 # (threadsafe_background) calling back into lwIP/DHCP/TCP processing on top
 # of whatever our own BASIC interpreter's call depth happens to be, it can
-# overflow and hard-fault a few seconds into a WiFi session. 16KB gives a
-# generous margin - RAM is not tight here (the 640x480 framebuffer is
-# static/global, not on the stack).
+# overflow and hard-fault a few seconds into a WiFi session.
+#
+# NOTE: core0's stack is hard-linked into the SCRATCH_Y memory bank, which
+# is a separate, fixed 4KB region on RP2350 (0x20081000, length 4k) - NOT
+# part of the main 512KB SRAM pool. 0x1000 (4096 bytes) is therefore the
+# maximum PICO_STACK_SIZE that fits without a custom linker script; going
+# any higher fails to link ("stack doesn't fit"). If 4KB still isn't enough,
+# the next step is a linker-script override that relocates .stack into the
+# main RAM region instead (there is plenty of room there), but that needs
+# care to not overlap the heap, so it's intentionally not done speculatively.
 target_compile_definitions(retro_pico2350 PRIVATE
-    PICO_STACK_SIZE=0x4000
+    PICO_STACK_SIZE=0x1000
 )
 
 # USB stdio off (we drive our own PS/2 keyboard), UART stdio off by default too.

@@ -87,10 +87,22 @@ vier Pins für eigene Projekte nicht mehr frei).
 **Hinweis Stack-Größe:** Der Pico-SDK-Standard-Stack für Core 0 ist nur 2KB
 groß. In Kombination mit WLAN (lwIP/CYW43-Hintergrundverarbeitung läuft per
 Interrupt oben drauf auf dem, was der BASIC-Interpreter gerade an Aufruftiefe
-belegt) reicht das oft nicht und führt zu einem Stack-Overflow/Absturz nach
-einigen Sekunden WLAN-Betrieb — ein bekanntes Muster bei Pico-W-Projekten.
-`CMakeLists.txt` setzt deshalb `PICO_STACK_SIZE=0x4000` (16KB); RAM ist dafür
-reichlich vorhanden, da der Framebuffer statisch (nicht auf dem Stack) liegt.
+belegt) kann das knapp werden. `CMakeLists.txt` setzt deshalb
+`PICO_STACK_SIZE=0x1000` (4KB, verdoppelt). Mehr geht ohne Eingriff ins
+Linker-Skript nicht: Der Core-0-Stack liegt fest in der 4KB großen
+`SCRATCH_Y`-RAM-Bank (einer kleinen, separaten Speicherbank, nicht Teil der
+großen 512KB-Haupt-SRAM) — ein größerer Wert bricht den Build mit "stack
+doesn't fit" ab. Falls 4KB nicht reicht, wäre der nächste Schritt, den Stack
+per Linker-Skript-Override in den Haupt-RAM-Bereich zu verlegen (dort ist
+reichlich Platz), was aber sorgfältig gemacht werden muss, um sich nicht mit
+dem Heap zu überschneiden.
+
+**Wichtig:** Kleinere Bildartefakte genau beim WLAN-Start deuten eher auf
+eine Stromversorgungs-/Signalintegritätsfrage hin als auf Software: Der
+CYW43439-Chip zieht beim Senden kurze Stromstoß-Spitzen, und HSTX/DVI läuft
+mit über 250 Mbit/s, ist also entsprechend empfindlich. Auf einem Breadboard
+hilft oft ein Stützkondensator (z.B. 100–470µF) nah an den 3V3/GND-Pins des
+Pico sowie eine kurze, stabile Stromversorgung.
 
 **Wichtig — Pegel:** PS/2-Tastaturen/Mäuse arbeiten mit 5 V-Logik, der Pico
 ist aber nur 3,3 V-tolerant. Nicht direkt verbinden! Entweder einen echten
