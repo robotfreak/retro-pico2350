@@ -124,9 +124,12 @@ static uint32_t vactive_line[] = {
 // AHB_ERROR+READ_ERROR set, read_addr sitting exactly at SRAM_END). Once a
 // channel faults, it never resumes, HSTX starves, and the display drops.
 //
-// Fix: read which channel(s) actually completed from the interrupt status
-// register and service exactly those, in a loop - no assumption about
-// alternation, robust to arbitrary IRQ servicing latency.
+// Fix: read which channel actually completed from the interrupt status
+// register instead of assuming alternation - robust to arbitrary IRQ
+// servicing latency. Each invocation still handles exactly one channel
+// (same cadence as the original code); if both happen to be pending at
+// once, the other bit stays set and the NVIC re-enters the handler again
+// immediately for a second, separate invocation.
 
 #define DMACH_PING 0
 #define DMACH_PONG 1
@@ -160,12 +163,17 @@ static void __not_in_flash_func(configure_channel_for_scanline)(dma_channel_hw_t
 }
 
 static void __not_in_flash_func(dma_irq_handler)(void) {
-    uint32_t pending;
-    while ((pending = dma_hw->ints0 & DMACH_BOTH_MASK) != 0) {
-        uint ch_num = (pending & (1u << DMACH_PING)) ? DMACH_PING : DMACH_PONG;
-        dma_hw->ints0 = 1u << ch_num; // clear
-        configure_channel_for_scanline(&dma_hw->ch[ch_num]);
-    }
+    // Handle exactly one channel per invocation (same cadence as the
+    // original handler - no same-call loop, to rule out any hazard from
+    // re-reading INTS0 immediately after clearing it). If both channels
+    // happen to be pending, this clears/services one of them now and the
+    // other bit stays set, so the NVIC re-enters this handler again right
+    // away for a separate, clean invocation.
+    uint32_t pending = dma_hw->ints0 & DMACH_BOTH_MASK;
+    if (!pending) return; // spurious entry; nothing to do
+    uint ch_num = (pending & (1u << DMACH_PING)) ? DMACH_PING : DMACH_PONG;
+    dma_hw->ints0 = 1u << ch_num; // clear
+    configure_channel_for_scanline(&dma_hw->ch[ch_num]);
 }
 
 // ----------------------------------------------------------------------------
