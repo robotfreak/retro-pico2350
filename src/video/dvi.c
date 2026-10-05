@@ -111,30 +111,38 @@ static uint32_t vactive_line[] = {
 // ----------------------------------------------------------------------------
 // DMA scanline chaining (ping/pong)
 //
-// NOTE: this deviates from the official example. The original handler
-// blindly alternates which channel it reconfigures (via a `dma_pong` flag),
-// assuming exactly one channel finishes between each invocation. That broke
-// under heavy concurrent bus traffic from the CYW43439 WiFi chip's own DMA
-// (e.g. during cyw43_arch_wifi_connect_timeout_ms()): if our IRQ is serviced
-// late enough that *both* ping and pong complete before we run, the
-// alternation assumption desyncs from reality, v_scanline drifts, and
-// eventually `active_line` goes out of range, reading past the end of
-// framebuf into unmapped memory - an AHB/READ bus error on the DMA channel,
-// which then stays faulted forever (confirmed via SWD: ctrl_trig had
-// AHB_ERROR+READ_ERROR set, read_addr sitting exactly at SRAM_END). Once a
-// channel faults, it never resumes, HSTX starves, and the display drops.
+// The two channels strictly alternate in hardware (each completion
+// auto-chain-triggers the other), so counting invocations and toggling
+// `dma_pong` each time is correct *as long as we get exactly one ISR
+// invocation per real completion* - which holds even if both channels
+// happen to finish close together (e.g. the short 9-word vactive_line
+// command-list transfer completes almost immediately, often before the
+// CPU has serviced the previous completion): the DMA_IRQ_0 line simply
+// stays pending and the NVIC re-enters this handler again right away for
+// the second one, so invocation count still matches completion count and
+// the blind alternation stays correct. (An earlier attempt to instead pick
+// the channel from DMA_INTS0 directly broke exactly this common case, by
+// preferring channel 0 whenever its bit happened to also be set, which can
+// silently swap the chronological order of the two completions without
+// ever producing an invalid address - no bus fault, just scrambled
+// scanline timing that a monitor can't lock onto.)
 //
-// Fix: read which channel actually completed from the interrupt status
-// register instead of assuming alternation - robust to arbitrary IRQ
-// servicing latency. Each invocation still handles exactly one channel
-// (same cadence as the original code); if both happen to be pending at
-// once, the other bit stays set and the NVIC re-enters the handler again
-// immediately for a second, separate invocation.
+// What *can* actually desync the alternation is a much longer stall - long
+// enough that one channel completes a second time before we have serviced
+// its first completion at all (observed in practice under heavy concurrent
+// bus traffic from the CYW43439 WiFi chip's own DMA during
+// cyw43_arch_wifi_connect_timeout_ms()). That's the case this handler now
+// guards against: if our `dma_pong` assumption doesn't match which channel
+// hardware actually says is pending, trust hardware and resynchronize,
+// instead of ploughing ahead with a stale assumption until `active_line`
+// eventually goes out of range and faults (confirmed via SWD: ctrl_trig
+// had AHB_ERROR+READ_ERROR set, read_addr sitting exactly at SRAM_END).
 
 #define DMACH_PING 0
 #define DMACH_PONG 1
 #define DMACH_BOTH_MASK ((1u << DMACH_PING) | (1u << DMACH_PONG))
 
+static bool dma_pong = false;
 static uint v_scanline = 2;
 static bool vactive_cmdlist_posted = false;
 
@@ -163,16 +171,22 @@ static void __not_in_flash_func(configure_channel_for_scanline)(dma_channel_hw_t
 }
 
 static void __not_in_flash_func(dma_irq_handler)(void) {
-    // Handle exactly one channel per invocation (same cadence as the
-    // original handler - no same-call loop, to rule out any hazard from
-    // re-reading INTS0 immediately after clearing it). If both channels
-    // happen to be pending, this clears/services one of them now and the
-    // other bit stays set, so the NVIC re-enters this handler again right
-    // away for a separate, clean invocation.
+    // Normal case: trust the alternation, exactly like the original
+    // handler - this is what correctly handles the common "both channels
+    // finish close together" situation (see block comment above).
+    uint ch_num = dma_pong ? DMACH_PONG : DMACH_PING;
     uint32_t pending = dma_hw->ints0 & DMACH_BOTH_MASK;
-    if (!pending) return; // spurious entry; nothing to do
-    uint ch_num = (pending & (1u << DMACH_PING)) ? DMACH_PING : DMACH_PONG;
+
+    // Resync only if reality disagrees with our assumption (the rare
+    // missed-a-full-round case under heavy concurrent bus traffic).
+    if (!(pending & (1u << ch_num))) {
+        if (pending & (1u << DMACH_PING)) ch_num = DMACH_PING;
+        else if (pending & (1u << DMACH_PONG)) ch_num = DMACH_PONG;
+        else return; // nothing pending at all; spurious entry
+    }
+
     dma_hw->ints0 = 1u << ch_num; // clear
+    dma_pong = (ch_num == DMACH_PING); // next expected channel is the other one
     configure_channel_for_scanline(&dma_hw->ch[ch_num]);
 }
 
