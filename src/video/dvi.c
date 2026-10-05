@@ -109,21 +109,33 @@ static uint32_t vactive_line[] = {
 };
 
 // ----------------------------------------------------------------------------
-// DMA scanline chaining (ping/pong), identical logic to the official example
+// DMA scanline chaining (ping/pong)
+//
+// NOTE: this deviates from the official example. The original handler
+// blindly alternates which channel it reconfigures (via a `dma_pong` flag),
+// assuming exactly one channel finishes between each invocation. That broke
+// under heavy concurrent bus traffic from the CYW43439 WiFi chip's own DMA
+// (e.g. during cyw43_arch_wifi_connect_timeout_ms()): if our IRQ is serviced
+// late enough that *both* ping and pong complete before we run, the
+// alternation assumption desyncs from reality, v_scanline drifts, and
+// eventually `active_line` goes out of range, reading past the end of
+// framebuf into unmapped memory - an AHB/READ bus error on the DMA channel,
+// which then stays faulted forever (confirmed via SWD: ctrl_trig had
+// AHB_ERROR+READ_ERROR set, read_addr sitting exactly at SRAM_END). Once a
+// channel faults, it never resumes, HSTX starves, and the display drops.
+//
+// Fix: read which channel(s) actually completed from the interrupt status
+// register and service exactly those, in a loop - no assumption about
+// alternation, robust to arbitrary IRQ servicing latency.
 
 #define DMACH_PING 0
 #define DMACH_PONG 1
+#define DMACH_BOTH_MASK ((1u << DMACH_PING) | (1u << DMACH_PONG))
 
-static bool dma_pong = false;
 static uint v_scanline = 2;
 static bool vactive_cmdlist_posted = false;
 
-static void __not_in_flash_func(dma_irq_handler)(void) {
-    uint ch_num = dma_pong ? DMACH_PONG : DMACH_PING;
-    dma_channel_hw_t *ch = &dma_hw->ch[ch_num];
-    dma_hw->intr = 1u << ch_num;
-    dma_pong = !dma_pong;
-
+static void __not_in_flash_func(configure_channel_for_scanline)(dma_channel_hw_t *ch) {
     if (v_scanline >= MODE_V_FRONT_PORCH && v_scanline < (MODE_V_FRONT_PORCH + MODE_V_SYNC_WIDTH)) {
         ch->read_addr = (uintptr_t)vblank_line_vsync_on;
         ch->transfer_count = count_of(vblank_line_vsync_on);
@@ -136,6 +148,7 @@ static void __not_in_flash_func(dma_irq_handler)(void) {
         vactive_cmdlist_posted = true;
     } else {
         uint active_line = v_scanline - (MODE_V_TOTAL_LINES - MODE_V_ACTIVE_LINES);
+        if (active_line >= MODE_V_ACTIVE_LINES) active_line = MODE_V_ACTIVE_LINES - 1; // defensive clamp
         ch->read_addr = (uintptr_t)&framebuf[active_line][0];
         ch->transfer_count = MODE_H_ACTIVE_PIXELS / sizeof(uint32_t);
         vactive_cmdlist_posted = false;
@@ -143,6 +156,15 @@ static void __not_in_flash_func(dma_irq_handler)(void) {
 
     if (!vactive_cmdlist_posted) {
         v_scanline = (v_scanline + 1) % MODE_V_TOTAL_LINES;
+    }
+}
+
+static void __not_in_flash_func(dma_irq_handler)(void) {
+    uint32_t pending;
+    while ((pending = dma_hw->ints0 & DMACH_BOTH_MASK) != 0) {
+        uint ch_num = (pending & (1u << DMACH_PING)) ? DMACH_PING : DMACH_PONG;
+        dma_hw->ints0 = 1u << ch_num; // clear
+        configure_channel_for_scanline(&dma_hw->ch[ch_num]);
     }
 }
 
