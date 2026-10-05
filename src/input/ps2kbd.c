@@ -1,5 +1,6 @@
 #include "ps2kbd.h"
 #include "dvi.h"
+#include "net.h"
 
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
@@ -149,6 +150,7 @@ char kbd_getc_blocking(void) {
     int c;
     while ((c = kbd_getc_nonblock()) < 0) {
         dvi_cursor_tick();
+        net_heartbeat_tick();
         tight_loop_contents();
     }
     return (char)c;

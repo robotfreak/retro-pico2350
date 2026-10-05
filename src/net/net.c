@@ -21,16 +21,49 @@
 static bool cyw43_ready = false;
 static bool wifi_connected = false;
 
+// NET_DBG: timestamped debug line to stdio (UART), flushed immediately so
+// it still shows up even if a hang/crash follows right after this call.
+#define NET_DBG(...) do { \
+    printf("[%8u] ", (unsigned)to_ms_since_boot(get_absolute_time())); \
+    printf(__VA_ARGS__); \
+    printf("\n"); \
+    stdio_flush(); \
+} while (0)
+
+bool net_init(void) {
+    NET_DBG("net_init: calling cyw43_arch_init()");
+    if (cyw43_arch_init()) {
+        NET_DBG("net_init: cyw43_arch_init() FAILED");
+        return false;
+    }
+    NET_DBG("net_init: cyw43_arch_init() ok, enabling STA mode");
+    cyw43_arch_enable_sta_mode();
+    cyw43_ready = true;
+    NET_DBG("net_init: done");
+    return true;
+}
+
+void net_heartbeat_tick(void) {
+    static absolute_time_t next_toggle;
+    static bool on = false;
+    static bool first = true;
+    if (!cyw43_ready) return;
+    if (first || time_reached(next_toggle)) {
+        first = false;
+        on = !on;
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, on);
+        next_toggle = make_timeout_time_ms(500);
+    }
+}
+
 bool net_wifi_connect(const char *ssid, const char *password, uint32_t timeout_ms) {
     if (!cyw43_ready) {
-        if (cyw43_arch_init()) {
-            dvi_puts("?WIFI INIT FAILED\n");
-            return false;
-        }
-        cyw43_arch_enable_sta_mode();
-        cyw43_ready = true;
+        NET_DBG("net_wifi_connect: net_init() was not called - aborting");
+        return false;
     }
+    NET_DBG("net_wifi_connect: connecting to '%s' (timeout %u ms)...", ssid, (unsigned)timeout_ms);
     int err = cyw43_arch_wifi_connect_timeout_ms(ssid, password, CYW43_AUTH_WPA2_AES_PSK, timeout_ms);
+    NET_DBG("net_wifi_connect: cyw43_arch_wifi_connect_timeout_ms returned %d", err);
     wifi_connected = (err == 0);
     return wifi_connected;
 }
@@ -58,9 +91,11 @@ static void dns_found_cb(const char *name, const ip_addr_t *ipaddr, void *arg) {
 
 static bool resolve_host(const char *host, ip_addr_t *out, uint32_t timeout_ms) {
     dns_result_t r = {0};
+    NET_DBG("resolve_host: dns_gethostbyname('%s')", host);
     cyw43_arch_lwip_begin();
     err_t err = dns_gethostbyname(host, &r.addr, dns_found_cb, &r);
     cyw43_arch_lwip_end();
+    NET_DBG("resolve_host: dns_gethostbyname returned %d", err);
     if (err == ERR_OK) {
         *out = r.addr;
         return true;
@@ -69,9 +104,14 @@ static bool resolve_host(const char *host, ip_addr_t *out, uint32_t timeout_ms) 
 
     absolute_time_t deadline = make_timeout_time_ms(timeout_ms);
     while (!r.done) {
-        if (time_reached(deadline)) return false;
+        if (time_reached(deadline)) {
+            NET_DBG("resolve_host: timed out waiting for DNS callback");
+            return false;
+        }
+        net_heartbeat_tick();
         sleep_ms(10);
     }
+    NET_DBG("resolve_host: callback fired, result=%d", r.result);
     if (r.result != ERR_OK) return false;
     *out = r.addr;
     return true;
@@ -113,8 +153,8 @@ static err_t telnet_recv_cb(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err
 }
 
 static void telnet_err_cb(void *arg, err_t err) {
-    (void)err;
     telnet_state_t *st = (telnet_state_t *)arg;
+    NET_DBG("telnet_err_cb: err=%d", err);
     st->closed = true;
     st->pcb = NULL; // lwIP has already freed the pcb when this fires
 }
@@ -122,6 +162,7 @@ static void telnet_err_cb(void *arg, err_t err) {
 static err_t telnet_connected_cb(void *arg, struct tcp_pcb *tpcb, err_t err) {
     (void)tpcb;
     telnet_state_t *st = (telnet_state_t *)arg;
+    NET_DBG("telnet_connected_cb: err=%d", err);
     if (err != ERR_OK) {
         st->closed = true;
         return ERR_OK;
@@ -172,6 +213,7 @@ static void handle_sgr(const char *params) {
 }
 
 bool net_telnet_session(const char *host, uint16_t port) {
+    NET_DBG("net_telnet_session: host='%s' port=%u", host, (unsigned)port);
     if (!wifi_connected) {
         dvi_puts("?NO WIFI - USE WIFI \"SSID\",\"PASSWORD\" FIRST\n");
         return false;
@@ -183,14 +225,17 @@ bool net_telnet_session(const char *host, uint16_t port) {
         dvi_puts("?HOST NOT FOUND\n");
         return false;
     }
+    NET_DBG("net_telnet_session: resolved ok");
 
     static telnet_state_t st; // static: avoids a large stack frame, one session at a time
     memset(&st, 0, sizeof(st));
 
+    NET_DBG("net_telnet_session: tcp_new_ip_type + tcp_connect...");
     cyw43_arch_lwip_begin();
     st.pcb = tcp_new_ip_type(IP_GET_TYPE(&addr));
     if (!st.pcb) {
         cyw43_arch_lwip_end();
+        NET_DBG("net_telnet_session: tcp_new_ip_type FAILED (out of memory?)");
         dvi_puts("?NO MEMORY\n");
         return false;
     }
@@ -199,6 +244,7 @@ bool net_telnet_session(const char *host, uint16_t port) {
     tcp_err(st.pcb, telnet_err_cb);
     err_t err = tcp_connect(st.pcb, &addr, port, telnet_connected_cb);
     cyw43_arch_lwip_end();
+    NET_DBG("net_telnet_session: tcp_connect returned %d", err);
     if (err != ERR_OK) {
         dvi_puts("?CONNECT FAILED\n");
         return false;
@@ -208,14 +254,17 @@ bool net_telnet_session(const char *host, uint16_t port) {
     absolute_time_t deadline = make_timeout_time_ms(10000);
     while (!st.connected && !st.closed) {
         if (time_reached(deadline)) {
+            NET_DBG("net_telnet_session: connect timed out, aborting");
             cyw43_arch_lwip_begin();
             if (st.pcb) tcp_abort(st.pcb);
             cyw43_arch_lwip_end();
             dvi_puts("?TIMEOUT\n");
             return false;
         }
+        net_heartbeat_tick();
         sleep_ms(10);
     }
+    NET_DBG("net_telnet_session: connect wait loop exited (connected=%d closed=%d)", st.connected, st.closed);
     if (st.closed) {
         dvi_puts("?CONNECT FAILED\n");
         return false;
@@ -231,6 +280,7 @@ bool net_telnet_session(const char *host, uint16_t port) {
 
     while (!st.closed) {
         dvi_cursor_tick();
+        net_heartbeat_tick();
         int c = kbd_getc_nonblock();
         if (c == 27) break; // ESC quits back to BASIC
         if (c >= 0) {

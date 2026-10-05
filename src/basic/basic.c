@@ -640,6 +640,8 @@ static void run_program(void) {
     gosub_sp = 0;
     int line_idx = 0;
     while (line_idx < prog_count) {
+        dvi_cursor_tick();
+        net_heartbeat_tick();
         if (kbd_getc_nonblock() == 3) { // Ctrl-C
             dvi_puts("\n?BREAK\n");
             return;
