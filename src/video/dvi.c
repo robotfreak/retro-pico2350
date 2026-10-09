@@ -193,7 +193,7 @@ static void __not_in_flash_func(dma_irq_handler)(void) {
 // ----------------------------------------------------------------------------
 // Console state
 
-#define CHAR_CELL_W 16
+#define CHAR_CELL_W 8
 #define CHAR_CELL_H 16
 
 static int cursor_col = 0;
@@ -222,19 +222,15 @@ static void draw_char_at(int col, int row, char c, uint8_t fg, uint8_t bg) {
     const uint8_t *glyph = font8x8_basic[(unsigned char)c];
     int x0 = col * CHAR_CELL_W;
     int y0 = row * CHAR_CELL_H;
+    // 8x8 glyph, drawn 1x horizontally and 2x vertically (8x16 cell).
     for (int gy = 0; gy < 8; gy++) {
         uint8_t bits = glyph[gy];
-        uint8_t row_px[8];
-        for (int gx = 0; gx < 8; gx++) {
-            row_px[gx] = (bits & (1u << gx)) ? fg : bg;
-        }
         uint8_t *dst0 = &framebuf[y0 + gy * 2][x0];
         uint8_t *dst1 = &framebuf[y0 + gy * 2 + 1][x0];
         for (int gx = 0; gx < 8; gx++) {
-            dst0[gx * 2]     = row_px[gx];
-            dst0[gx * 2 + 1] = row_px[gx];
-            dst1[gx * 2]     = row_px[gx];
-            dst1[gx * 2 + 1] = row_px[gx];
+            uint8_t px = (bits & (1u << gx)) ? fg : bg;
+            dst0[gx] = px;
+            dst1[gx] = px;
         }
     }
 }

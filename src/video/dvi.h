@@ -2,8 +2,8 @@
 
 #include <stdint.h>
 
-// Text console geometry (640x480 framebuffer, 16x16 pixel cells -> 40x30 chars)
-#define DVI_COLS 40
+// Text console geometry (640x480 framebuffer, 8x16 pixel cells -> 80x30 chars)
+#define DVI_COLS 80
 #define DVI_ROWS 30
 
 // Bring up HSTX, DMA and the scanline IRQ, and start DVI output.

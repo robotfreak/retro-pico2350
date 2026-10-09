@@ -48,8 +48,8 @@ da der Pico keine echten TMDS-Treiberpegel liefert. Am einfachsten: fertige
 oder die Widerstände + eine HDMI-Buchse selbst verdrahten. Es wird nur das
 digitale Bild übertragen, kein Audio.
 
-Auflösung: 640×480 @ 60 Hz, Textkonsole 40 Spalten × 30 Zeilen (16×16-Pixel-
-Zeichen, 8×8-Font auf 2× skaliert).
+Auflösung: 640×480 @ 60 Hz, Textkonsole 80 Spalten × 30 Zeilen (8×16-Pixel-
+Zeichen, 8×8-Font vertikal auf 2× skaliert).
 
 ### Tastatur: PS/2 (GPIO 2/3)
 
