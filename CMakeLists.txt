@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.13)
 
-# Target board: Raspberry Pi Pico 2 W (RP2350 + CYW43439 Wi-Fi/BT).
-# Use "pico2" instead if you're building for a plain Pico 2 without wireless
-# (and drop the WiFi/Telnet sources + pico_cyw43_arch_lwip_* link below).
-set(PICO_BOARD pico2_w CACHE STRING "Board type")
+# Main controller: plain Raspberry Pi Pico 2 (RP2350). WiFi/TCP lives on a
+# separate Pico 2 W "backplane controller" (see backplane/), connected via UART.
+set(PICO_BOARD pico2 CACHE STRING "Board type")
 
 include(pico_sdk_import.cmake)
 
@@ -33,6 +32,7 @@ add_executable(retro_pico2350
     src/input/ps2mouse.c
     src/basic/basic.c
     src/net/net.c
+    src/proto/bp_link.c
     src/storage/sdcard.c
     src/storage/hw_config.c
 )
@@ -48,6 +48,7 @@ target_include_directories(retro_pico2350 PRIVATE
     src/basic
     src/net
     src/storage
+    src/proto
 )
 
 target_link_libraries(retro_pico2350
@@ -57,24 +58,13 @@ target_link_libraries(retro_pico2350
     hardware_irq
     hardware_clocks
     hardware_spi
-    pico_cyw43_arch_lwip_threadsafe_background
+    hardware_uart
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico
 )
 
-# The pico-sdk default core0 stack is only 2KB (PICO_STACK_SIZE). That's
-# tight even without WiFi; combined with the cyw43/lwIP background IRQ
-# (threadsafe_background) calling back into lwIP/DHCP/TCP processing on top
-# of whatever our own BASIC interpreter's call depth happens to be, it can
-# overflow and hard-fault a few seconds into a WiFi session.
-#
-# NOTE: core0's stack is hard-linked into the SCRATCH_Y memory bank, which
-# is a separate, fixed 4KB region on RP2350 (0x20081000, length 4k) - NOT
-# part of the main 512KB SRAM pool. 0x1000 (4096 bytes) is therefore the
-# maximum PICO_STACK_SIZE that fits without a custom linker script; going
-# any higher fails to link ("stack doesn't fit"). If 4KB still isn't enough,
-# the next step is a linker-script override that relocates .stack into the
-# main RAM region instead (there is plenty of room there), but that needs
-# care to not overlap the heap, so it's intentionally not done speculatively.
+# The pico-sdk default core0 stack is only 2KB. core0's stack lives in the
+# fixed 4KB SCRATCH_Y bank, so 0x1000 is the maximum without a custom linker
+# script.
 target_compile_definitions(retro_pico2350 PRIVATE
     PICO_STACK_SIZE=0x1000
 )

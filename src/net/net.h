@@ -3,18 +3,15 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// Brings up the CYW43439 driver and station mode. Call this once at boot
-// (main.c does), *before* net_wifi_connect() or net_heartbeat_tick(). It is
-// deliberately unconditional (not lazy) right now: that lets us tell, while
-// debugging the "crashes a few seconds after WiFi starts" issue, whether
-// merely having the WiFi chip driver active (LED heartbeat blinking, no
-// network traffic) is enough to cause trouble, versus only actually
-// connecting / passing traffic. Prints progress to stdio (UART) either way.
+// Network access goes through the backplane controller (Pico 2 W) over a
+// UART link, see src/proto/bp_proto.h and backplane/main.c.
+
+// Initialises the link and checks that the backplane answers. Returns false
+// if it does not (the rest of the system keeps working without networking).
 bool net_init(void);
 
-// Connects to a WiFi access point (station mode). Blocks (busy-waiting,
-// servicing lwIP in the background) until connected or the timeout elapses.
-// Requires net_init() to have been called already.
+// Asks the backplane to join a WiFi access point (station mode). Blocks
+// until connected or the timeout elapses.
 bool net_wifi_connect(const char *ssid, const char *password, uint32_t timeout_ms);
 
 // Resolves `host`, opens a TCP connection to it on `port`, and runs an
@@ -24,9 +21,6 @@ bool net_wifi_connect(const char *ssid, const char *password, uint32_t timeout_m
 // ANSI escape codes (SGR color, clear screen) often used by BBS menus.
 bool net_telnet_session(const char *host, uint16_t port);
 
-// Call regularly (e.g. from an input-wait loop) once net_init() has
-// succeeded. Blinks the onboard LED (wired to the CYW43439 on Pico 2 W, not
-// a plain GPIO) roughly every 500ms, purely as a "is the firmware still
-// alive" indicator while debugging - if it stops blinking, the firmware has
-// hung; if the board resets, it starts blinking from scratch after reboot.
+// Call regularly from wait loops: blinks the onboard LED as a firmware
+// "still alive" indicator.
 void net_heartbeat_tick(void);

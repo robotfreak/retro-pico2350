@@ -2,19 +2,14 @@
 // (RP2350), with DVI video via HSTX and a PS/2 keyboard (+ optional mouse).
 //
 // Pin plan (chosen to avoid the fixed HSTX pins 12-19 and, on Pico 2 W, the
-// CYW43439 Wi-Fi/BT pins 23/24/25/29):
+// SD card pins):
 //   DVI (HSTX, fixed)   : GPIO 12-19  -> DVI/HDMI connector, see dvi.c
 //   PS/2 keyboard       : GPIO 2 (DATA), GPIO 3 (CLOCK)
 //   PS/2 mouse (optional): GPIO 4 (DATA), GPIO 5 (CLOCK)
 //   Debug UART0         : GPIO 0 (TX), GPIO 1 (RX) - 115200 8N1
+//   Backplane link UART1: GPIO 20 (TX), GPIO 21 (RX) - to the Pico 2 W
+//                         running backplane/ (WiFi + TCP/IP), see net.c
 //
-// DEBUG BUILD NOTE: while chasing the "crashes/display blanks a few seconds
-// into WiFi use" issue, net_init() (which brings up the CYW43439 driver and
-// starts the onboard-LED heartbeat) is called unconditionally at boot,
-// instead of lazily on first WIFI command. This is deliberate: it lets us
-// see, via the UART log and the LED, whether merely having the WiFi driver
-// active (no network traffic yet) already causes trouble, versus only
-// actually connecting. See net.c for the DBG(...) checkpoints.
 
 #include "pico/stdlib.h"
 #include <stdio.h>
@@ -50,8 +45,8 @@ int main(void) {
     printf("mouse_init done (mouse %s)\n", has_mouse ? "found" : "not found"); stdio_flush();
 
     printf("net_init...\n"); stdio_flush();
-    bool wifi_ready = net_init();
-    printf("net_init done (%s)\n", wifi_ready ? "ok" : "FAILED"); stdio_flush();
+    bool wifi_ready = net_init(); // talks to the backplane controller
+    printf("net_init done (backplane %s)\n", wifi_ready ? "ok" : "NOT FOUND"); stdio_flush();
 
     printf("basic_init...\n"); stdio_flush();
     basic_init();

@@ -1,6 +1,7 @@
-# Retro-Pico BASIC Computer (RP2350 / Pico 2 W)
+# Retro-Pico BASIC Computer (RP2350 / Pico 2 + Pico 2 W Backplane)
 
-Ein kleiner Retro-Heimcomputer auf Basis des Raspberry Pi Pico 2 W (RP2350):
+Ein kleiner Retro-Heimcomputer auf Basis des Raspberry Pi Pico 2 (RP2350) plus
+einem Pico 2 W als WLAN-Backplane:
 DVI-Videoausgabe über die HSTX-Schnittstelle, PS/2-Tastatur (und optional
 PS/2-Maus) als Eingabe, und ein eingebauter BASIC-Interpreter als
 "Betriebssystem".
@@ -78,31 +79,26 @@ mit eigenem 3,3V-Regler/Pegelwandler verwenden (viele billige "SD Card
 Module"-Platinen sind dafür ausgelegt); direkt an eine blanke SD-Karte ohne
 Pegelanpassung sollte man nur gehen, wenn man die 3,3V-Variante hat.
 
-### WLAN: intern (CYW43439 auf dem Pico 2 W)
+### WLAN: separater Backplane-Controller (Pico 2 W) über UART
 
-Keine zusätzliche Verdrahtung nötig — der WLAN-Chip ist auf dem Pico 2 W
-bereits verbaut und intern an GPIO 23/24/25/29 angebunden (deshalb sind diese
-vier Pins für eigene Projekte nicht mehr frei).
+WLAN und TCP/IP laufen auf einem zweiten Board, dem *Backplane Controller*
+(Raspberry Pi Pico 2 W, Firmware in `backplane/`). Der Hauptcontroller ist
+ein normaler **Pico 2** (Video, SD, PS/2) und spricht mit der Backplane über
+ein einfaches gerahmtes Protokoll (`src/proto/bp_proto.h`, 921600 Baud, 8N1).
+Das entkoppelt die HSTX-DVI-Ausgabe vollständig vom CYW43-Chip (keine
+DMA-/IRQ-/Stromspitzen-Wechselwirkung mehr).
 
-**Hinweis Stack-Größe:** Der Pico-SDK-Standard-Stack für Core 0 ist nur 2KB
-groß. In Kombination mit WLAN (lwIP/CYW43-Hintergrundverarbeitung läuft per
-Interrupt oben drauf auf dem, was der BASIC-Interpreter gerade an Aufruftiefe
-belegt) kann das knapp werden. `CMakeLists.txt` setzt deshalb
-`PICO_STACK_SIZE=0x1000` (4KB, verdoppelt). Mehr geht ohne Eingriff ins
-Linker-Skript nicht: Der Core-0-Stack liegt fest in der 4KB großen
-`SCRATCH_Y`-RAM-Bank (einer kleinen, separaten Speicherbank, nicht Teil der
-großen 512KB-Haupt-SRAM) — ein größerer Wert bricht den Build mit "stack
-doesn't fit" ab. Falls 4KB nicht reicht, wäre der nächste Schritt, den Stack
-per Linker-Skript-Override in den Haupt-RAM-Bereich zu verlegen (dort ist
-reichlich Platz), was aber sorgfältig gemacht werden muss, um sich nicht mit
-dem Heap zu überschneiden.
+| Hauptcontroller (Pico 2) | Backplane (Pico 2 W) |
+|--------------------------|----------------------|
+| GPIO 20 (UART1 TX)       | GPIO 1 (UART0 RX)    |
+| GPIO 21 (UART1 RX)       | GPIO 0 (UART0 TX)    |
+| GND                      | GND                  |
 
-**Wichtig:** Kleinere Bildartefakte genau beim WLAN-Start deuten eher auf
-eine Stromversorgungs-/Signalintegritätsfrage hin als auf Software: Der
-CYW43439-Chip zieht beim Senden kurze Stromstoß-Spitzen, und HSTX/DVI läuft
-mit über 250 Mbit/s, ist also entsprechend empfindlich. Auf einem Breadboard
-hilft oft ein Stützkondensator (z.B. 100–470µF) nah an den 3V3/GND-Pins des
-Pico sowie eine kurze, stabile Stromversorgung.
+Beide Boards haben 3,3 V-Logik, keine Pegelwandler nötig. Die Backplane
+hat keinen UART-Debug; ihre `printf`-Ausgabe kommt über USB-CDC. Die
+Backplane-LED blinkt schnell (250 ms) ohne und langsam (1 s) mit
+WLAN-Verbindung. Wird beim Booten keine Backplane gefunden, laufen BASIC,
+Video und SD ganz normal weiter; `WIFI`/`TELNET` melden dann `?NO BACKPLANE`.
 
 **Wichtig — Pegel:** PS/2-Tastaturen/Mäuse arbeiten mit 5 V-Logik, der Pico
 ist aber nur 3,3 V-tolerant. Nicht direkt verbinden! Entweder einen echten
@@ -139,7 +135,7 @@ git clone https://github.com/carlk3/no-OS-FatFS-SD-SDIO-SPI-RPi-Pico.git \
 (Pfad relativ zum Projektordner `retro-pico2350/`. CMake bricht mit einer
 klaren Fehlermeldung ab, falls dieser Ordner fehlt.)
 
-### Bauen
+### Bauen (Hauptcontroller, Pico 2)
 
 ```bash
 export PICO_SDK_PATH=/pfad/zu/pico-sdk
@@ -150,15 +146,18 @@ cmake -G Ninja ..
 ninja
 ```
 
-Das Ergebnis ist `retro_pico2350.uf2`. Pico 2 W im BOOTSEL-Modus (BOOTSEL
+Das Ergebnis ist `retro_pico2350.uf2`. Pico 2 im BOOTSEL-Modus (BOOTSEL
 beim Einstecken gedrückt halten) als Massenspeicher mounten und die `.uf2`
 draufkopieren.
 
-Falls ihr einen normalen Pico 2 (ohne WLAN) verwendet: `PICO_BOARD` in der
-obersten `CMakeLists.txt` von `pico2_w` auf `pico2` ändern, und die
-`WIFI`/`TELNET`-Quelle ([src/net/net.c](src/net/net.c)) sowie die
-`pico_cyw43_arch_lwip_threadsafe_background`-Abhängigkeit entfernen, da es
-dann keinen WLAN-Chip gibt.
+### Bauen (Backplane, Pico 2 W)
+
+```bash
+cd backplane && mkdir build && cd build
+cmake -G Ninja .. && ninja
+```
+
+Ergebnis ist `retro_backplane.uf2` für den Pico 2 W.
 
 ## BASIC-Dialekt
 
@@ -191,7 +190,7 @@ Zeilennummerierte BASIC im Tiny-BASIC-Stil:
 - Ohne eingelegte SD-Karte melden diese Befehle `?NO SD CARD`, der Rest des
   Systems läuft unverändert weiter.
 
-### WLAN / Telnet (nur Pico 2 W)
+### WLAN / Telnet (über die Backplane)
 
 - `WIFI "SSID","PASSWORT"` — verbindet sich mit einem WLAN-Access-Point
   (WPA2). Zugangsdaten werden nur im RAM gehalten, nicht gespeichert — nach
@@ -229,6 +228,7 @@ Arrays, `AND`/`OR` usw. später ergänzen lassen.
 retro-pico2350/
   CMakeLists.txt
   pico_sdk_import.cmake
+  backplane/                 Firmware des Pico 2 W (WLAN + lwIP), eigenes CMake
   src/
     main.c                  Verdrahtet alles zusammen, Pin-Zuordnung
     video/
@@ -242,8 +242,10 @@ retro-pico2350/
       hw_config.c             SPI/Pin-Konfiguration für die SD-Karten-Bibliothek
       sdcard.c / .h           Mount + Datei-Hilfsfunktionen (FatFs-Wrapper)
     net/
-      lwipopts.h              lwIP-Konfiguration (minimal, für Telnet-Terminal)
-      net.c / .h              WiFi-Verbindung + Telnet-Client (lwIP raw API)
+      net.c / .h              UART-Client zur Backplane + Telnet-Terminal-Logik
+    proto/
+      bp_proto.h              Frame-Format + Befehle (von beiden Firmwares genutzt)
+      bp_link.c / .h          UART-Transport mit IRQ-Ringpuffer
     basic/
       basic.c / .h           BASIC-Interpreter + REPL/Zeileneditor
 ```

@@ -4,7 +4,7 @@
 //
 // We use SPI1 on GPIO 8-11, chosen specifically to avoid this project's
 // other fixed pin assignments: GPIO 12-19 (HSTX/DVI), GPIO 2-5 (PS/2
-// keyboard+mouse), GPIO 0-1 (UART), GPIO 23/24/25/29 (CYW43439 on Pico 2 W).
+// keyboard+mouse), GPIO 0-1 (debug UART), GPIO 20-21 (backplane UART).
 
 #include "hw_config.h"
 
