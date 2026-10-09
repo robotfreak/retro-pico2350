@@ -121,25 +121,6 @@ static void do_csi(uint8_t final) {
     }
 }
 
-// CP437 -> ASCII look-alikes for the glyphs BBS screens use most.
-static char cp437_to_ascii(uint8_t b) {
-    switch (b) {
-    case 0xB0: return '.';
-    case 0xB1: return ':';
-    case 0xB2: case 0xDB: return '#';
-    case 0xDC: return '_';
-    case 0xDF: return '^';
-    case 0xDD: return '[';
-    case 0xDE: return ']';
-    case 0xB3: case 0xBA: return '|';
-    case 0xC4: case 0xCD: return '-';
-    case 0xFE: return '*';
-    default:
-        if (b >= 0xB4 && b <= 0xDA) return '+'; // other box-drawing pieces
-        return '?';
-    }
-}
-
 void ansi_feed(uint8_t b) {
     switch (state) {
     case S_NORMAL:
@@ -157,7 +138,7 @@ void ansi_feed(uint8_t b) {
             return;
         }
         if (b >= 32 && b < 127) { dvi_putc((char)b); return; }
-        if (b >= 0x80) { dvi_putc(cp437_to_ascii(b)); return; }
+        if (b >= 0x80) { dvi_putc((char)b); return; } // CP437 glyph
         return; // other C0 controls (BEL, ...) ignored
     case S_ESC:
         state = S_NORMAL;

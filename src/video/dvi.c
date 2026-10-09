@@ -19,7 +19,7 @@
 #include <string.h>
 
 #include "dvi.h"
-#include "font8x8_basic.h"
+#include "font8x8_cp437.h"
 
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
@@ -231,8 +231,7 @@ static bool wrap_pending = false;
 
 // Paints a glyph into the framebuffer only (no shadow update).
 static void paint_cell(int col, int row, uint8_t c, uint8_t fg, uint8_t bg) {
-    if (c > 0x7f) c = '?';
-    const uint8_t *glyph = font8x8_basic[c];
+    const uint8_t *glyph = font8x8_cp437[c];
     int x0 = col * CHAR_CELL_W;
     int y0 = row * CHAR_CELL_H;
     // 8x8 glyph, drawn 1x horizontally and 2x vertically (8x16 cell).
