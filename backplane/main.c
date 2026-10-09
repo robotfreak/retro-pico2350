@@ -249,6 +249,7 @@ static void heartbeat(void) {
 
 int main(void) {
     stdio_init_all();
+    sleep_ms(2000); // give a USB terminal time to attach so boot messages are not lost
     if (cyw43_arch_init()) {
         printf("cyw43_arch_init failed\n");
         for (;;) tight_loop_contents();
@@ -264,7 +265,10 @@ int main(void) {
         uint8_t type;
         const uint8_t *pl;
         uint16_t len;
-        while (bp_link_poll(&type, &pl, &len)) handle_frame(type, pl, len);
+        while (bp_link_poll(&type, &pl, &len)) {
+            printf("rx frame type=0x%02x len=%u\n", type, len);
+            handle_frame(type, pl, len);
+        }
         session_step();
         heartbeat();
     }

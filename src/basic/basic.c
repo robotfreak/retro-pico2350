@@ -493,6 +493,7 @@ static Action exec_one_statement(const char **p, bool in_program, int current_li
         if (**p != ',') ERROR("?SYNTAX ERROR");
         (*p)++;
         parse_string_literal(p, pass, sizeof(pass));
+        if (!net_backplane_ready()) { dvi_puts("?NO BACKPLANE\n"); return ACT_NONE; }
         dvi_puts("CONNECTING TO WIFI...\n");
         if (net_wifi_connect(ssid, pass, 30000)) {
             dvi_puts("WIFI CONNECTED\n");

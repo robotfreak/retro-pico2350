@@ -48,6 +48,7 @@ int main(void) {
     bool wifi_ready = net_init(); // talks to the backplane controller
     printf("net_init done (backplane %s)\n", wifi_ready ? "ok" : "NOT FOUND"); stdio_flush();
 
+    dvi_puts(wifi_ready ? "BACKPLANE OK\n" : "BACKPLANE NOT FOUND\n");
     printf("basic_init...\n"); stdio_flush();
     basic_init();
     printf("entering basic_repl\n"); stdio_flush();

@@ -57,6 +57,8 @@ bool net_init(void) {
     return backplane_ok;
 }
 
+bool net_backplane_ready(void) { return backplane_ok; }
+
 void net_heartbeat_tick(void) {
 #ifdef PICO_DEFAULT_LED_PIN
     static absolute_time_t next_toggle;
@@ -85,7 +87,13 @@ bool net_wifi_connect(const char *ssid, const char *password, uint32_t timeout_m
     bp_link_send(BP_CMD_WIFI_CONNECT, buf, (uint16_t)(sl + pl_ + 2 + 4));
 
     const uint8_t *pl; uint16_t len;
-    wifi_connected = wait_frame(BP_EVT_WIFI, timeout_ms + 3000, &pl, &len) && len >= 1 && pl[0];
+    if (!wait_frame(BP_EVT_WIFI, timeout_ms + 3000, &pl, &len)) {
+        NET_DBG("net_wifi_connect: backplane did not answer");
+        wifi_connected = false;
+        return false;
+    }
+    wifi_connected = len >= 1 && pl[0];
+    NET_DBG("net_wifi_connect: backplane reports %s", wifi_connected ? "connected" : "join failed");
     return wifi_connected;
 }
 

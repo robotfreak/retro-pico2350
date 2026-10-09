@@ -10,6 +10,9 @@
 // if it does not (the rest of the system keeps working without networking).
 bool net_init(void);
 
+// True if the backplane answered during net_init().
+bool net_backplane_ready(void);
+
 // Asks the backplane to join a WiFi access point (station mode). Blocks
 // until connected or the timeout elapses.
 bool net_wifi_connect(const char *ssid, const char *password, uint32_t timeout_ms);
