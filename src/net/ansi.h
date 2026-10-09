@@ -6,7 +6,8 @@
 // save/restore), erase (ED/EL/ECH), insert/delete lines, SGR (16 colours,
 // bold, reverse), device status report (ESC[6n) and the usual C0 controls.
 // Everything else (modes, scroll regions, OSC strings, ...) is parsed and
-// ignored. Bytes >= 0x80 are drawn as CP437 glyphs.
+// ignored. Input may be UTF-8 (mapped to CP437 glyphs) or raw CP437: bytes that
+// do not form a valid UTF-8 sequence are drawn as CP437 directly.
 
 #include <stdint.h>
 

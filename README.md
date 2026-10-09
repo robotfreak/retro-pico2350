@@ -207,10 +207,13 @@ Zeilennummerierte BASIC im Tiny-BASIC-Stil:
   Zeilen einfügen/löschen (`L`/`M`), Farben (`SGR`: 16 Farben, Fett,
   Invers, Hintergrund) sowie die Positionsabfrage `ESC[6n`, mit der BBSe
   die ANSI-Unterstützung erkennen. Pfeiltasten, Pos1/Ende, Entf/Einfg und
-  Bild auf/ab werden als Escape-Sequenzen gesendet. Zeichen ≥ 0x80 (CP437,
-  z.B. Rahmen- und Blockzeichen) werden durch ASCII-Ersatzzeichen dargestellt
-  (`|`, `-`, `+`, `#`, ...), da der Font nur ASCII enthält. Nicht umgesetzt:
-  Scroll-Bereiche, Einfügen/Löschen von Zeichen, UTF-8, 256-/TrueColor.
+  Bild auf/ab werden als Escape-Sequenzen gesendet. Der Font ist CP437
+  (Rahmen-, Block- und Akzentzeichen). Eingehender Text darf UTF-8 oder
+  rohes CP437 sein: UTF-8 wird auf CP437-Glyphen abgebildet (Rahmen, Blöcke,
+  Akzente, Pfeile, Symbole; typografische Anführungszeichen/Striche auf
+  ASCII, alles andere `?`). Die Erkennung läuft pro Sitzung automatisch:
+  ungültige UTF-8-Folgen schalten auf rohes CP437, eine gültige 3-Byte-Folge
+  auf UTF-8. Nicht umgesetzt: Scroll-Bereiche, Einfügen/Löschen von Zeichen, 256-/TrueColor.
 
 **Bekannte Einschränkungen (bewusste Vereinfachungen für v1):**
 - `GOSUB`/`FOR` sollten jeweils die einzige/letzte Anweisung ihrer Zeile
