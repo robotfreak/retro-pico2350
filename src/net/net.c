@@ -7,6 +7,7 @@
 #include "net.h"
 #include "dvi.h"
 #include "ps2kbd.h"
+#include "ansi.h"
 #include "bp_link.h"
 
 #include <stdio.h>
@@ -100,34 +101,7 @@ bool net_wifi_connect(const char *ssid, const char *password, uint32_t timeout_m
 // ----------------------------------------------------------------------------
 // Telnet IAC negotiation + minimal ANSI (SGR / clear-screen) filtering
 
-typedef enum { TS_NORMAL, TS_ESC, TS_CSI, TS_IAC, TS_IAC_CMD } TermState;
-
-static void handle_sgr(const char *params) {
-    static const struct { uint8_t r, g, b; } pal[8] = {
-        {0, 0, 0}, {255, 0, 0}, {0, 255, 0}, {255, 255, 0},
-        {64, 96, 255}, {255, 0, 255}, {0, 255, 255}, {255, 255, 255},
-    };
-    int vals[8];
-    int n = 0;
-    const char *p = params;
-    while (*p && n < 8) {
-        vals[n++] = atoi(p);
-        while (*p && *p != ';') p++;
-        if (*p == ';') p++;
-    }
-    if (n == 0) vals[n++] = 0;
-    for (int i = 0; i < n; i++) {
-        int v = vals[i];
-        if (v == 0) {
-            dvi_set_colors(dvi_rgb332(0, 255, 0), 0);
-        } else if (v >= 30 && v <= 37) {
-            int idx = v - 30;
-            dvi_set_colors(dvi_rgb332(pal[idx].r, pal[idx].g, pal[idx].b), 0);
-        }
-        // Background colors (40-47) and bright variants (90-97) are not
-        // mapped in this first version.
-    }
-}
+typedef enum { TS_NORMAL, TS_IAC, TS_IAC_CMD } TermState;
 
 static void telnet_send(const uint8_t *data, uint16_t len) {
     bp_link_send(BP_CMD_TCP_DATA, data, len);
@@ -175,10 +149,8 @@ bool net_telnet_session(const char *host, uint16_t port) {
     dvi_puts("CONNECTED. (ESC TO QUIT)\n");
 
     TermState term_state = TS_NORMAL;
-    char csi_buf[16];
-    int csi_len = 0;
     uint8_t iac_cmd_byte = 0;
-    bool pending_cr = false;
+    ansi_begin(telnet_send);
 
     bool closed = false;
     while (!closed) {
@@ -186,7 +158,15 @@ bool net_telnet_session(const char *host, uint16_t port) {
         net_heartbeat_tick();
         int c = kbd_getc_nonblock();
         if (c == 27) break; // ESC quits back to BASIC
-        if (c >= 0) {
+        if (c >= KBD_KEY_UP && c <= KBD_KEY_PGDN) {
+            static const char *const seq[] = {
+                "\033[A", "\033[B", "\033[C", "\033[D",   // up down right left
+                "\033[H", "\033[F", "\033[3~", "\033[2~", // home end del ins
+                "\033[5~", "\033[6~",                       // pgup pgdn
+            };
+            const char *q = seq[c - KBD_KEY_UP];
+            telnet_send((const uint8_t *)q, (uint16_t)strlen(q));
+        } else if (c >= 0) {
             uint8_t ch = (uint8_t)c;
             if (ch == '\n') {
                 static const uint8_t crlf[2] = {'\r', '\n'};
@@ -207,33 +187,12 @@ bool net_telnet_session(const char *host, uint16_t port) {
 
             switch (term_state) {
             case TS_NORMAL:
-                if (b == 0xFF) { term_state = TS_IAC; break; }
-                if (b == 0x1B) { term_state = TS_ESC; pending_cr = false; break; }
-                if (b == '\r') { pending_cr = true; dvi_putc('\n'); break; }
-                if (b == '\n') {
-                    if (pending_cr) { pending_cr = false; break; }
-                    dvi_putc('\n');
-                    break;
-                }
-                pending_cr = false;
-                if (b == '\b' || (b >= 32 && b < 127)) dvi_putc((char)b);
-                break;
-            case TS_ESC:
-                if (b == '[') { term_state = TS_CSI; csi_len = 0; }
-                else term_state = TS_NORMAL;
-                break;
-            case TS_CSI:
-                if ((b >= '0' && b <= '9') || b == ';') {
-                    if (csi_len < (int)sizeof(csi_buf) - 1) csi_buf[csi_len++] = (char)b;
-                } else {
-                    csi_buf[csi_len] = '\0';
-                    if (b == 'm') handle_sgr(csi_buf);
-                    else if (b == 'J' || b == 'H' || b == 'f') dvi_clear();
-                    term_state = TS_NORMAL;
-                }
+                if (b == 0xFF) term_state = TS_IAC;
+                else ansi_feed(b);
                 break;
             case TS_IAC:
                 if (b == 0xFF) { // literal 0xFF data byte
+                    ansi_feed(b);
                     term_state = TS_NORMAL;
                 } else {
                     iac_cmd_byte = b;
@@ -256,6 +215,7 @@ bool net_telnet_session(const char *host, uint16_t port) {
         } // while poll
     } // while !closed
 
+    ansi_end();
     dvi_puts("\n?CONNECTION CLOSED\n");
     bp_link_send(BP_CMD_TCP_CLOSE, NULL, 0);
     return true;

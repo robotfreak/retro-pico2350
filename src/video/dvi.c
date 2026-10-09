@@ -217,9 +217,22 @@ void dvi_set_colors(uint8_t fg, uint8_t bg) {
     cur_bg = bg;
 }
 
-static void draw_char_at(int col, int row, char c, uint8_t fg, uint8_t bg) {
-    if ((unsigned char)c > 0x7f) c = '?';
-    const uint8_t *glyph = font8x8_basic[(unsigned char)c];
+// Text shadow of the screen. It lets the cursor block be drawn/removed without
+// destroying the glyph underneath, and lets line operations (insert/delete,
+// partial erase) work on cells while the framebuffer stays the DMA source.
+static uint8_t sh_ch[DVI_ROWS][DVI_COLS];
+static uint8_t sh_fg[DVI_ROWS][DVI_COLS];
+static uint8_t sh_bg[DVI_ROWS][DVI_COLS];
+
+// Deferred line wrap: after writing the last column the cursor stays there
+// and the wrap happens before the next printable character (like a real
+// terminal), so an 80-char line followed by '\n' gives one line break.
+static bool wrap_pending = false;
+
+// Paints a glyph into the framebuffer only (no shadow update).
+static void paint_cell(int col, int row, uint8_t c, uint8_t fg, uint8_t bg) {
+    if (c > 0x7f) c = '?';
+    const uint8_t *glyph = font8x8_basic[c];
     int x0 = col * CHAR_CELL_W;
     int y0 = row * CHAR_CELL_H;
     // 8x8 glyph, drawn 1x horizontally and 2x vertically (8x16 cell).
@@ -235,18 +248,25 @@ static void draw_char_at(int col, int row, char c, uint8_t fg, uint8_t bg) {
     }
 }
 
+static void draw_char_at(int col, int row, char c, uint8_t fg, uint8_t bg) {
+    sh_ch[row][col] = (uint8_t)c;
+    sh_fg[row][col] = fg;
+    sh_bg[row][col] = bg;
+    paint_cell(col, row, (uint8_t)c, fg, bg);
+}
+
+// Cursor on = the cell's glyph with foreground/background swapped.
 static void draw_cursor_cell(bool on) {
-    uint8_t color = on ? cur_fg : cur_bg;
-    int x0 = cursor_col * CHAR_CELL_W;
-    int y0 = cursor_row * CHAR_CELL_H;
-    for (int y = 0; y < CHAR_CELL_H; y++) {
-        memset(&framebuf[y0 + y][x0], color, CHAR_CELL_W);
-    }
+    uint8_t ch = sh_ch[cursor_row][cursor_col];
+    uint8_t fg = sh_fg[cursor_row][cursor_col];
+    uint8_t bg = sh_bg[cursor_row][cursor_col];
+    if (on) paint_cell(cursor_col, cursor_row, ch, bg, fg);
+    else    paint_cell(cursor_col, cursor_row, ch, fg, bg);
 }
 
 // Retracts the cursor block (if currently drawn) before the cursor moves or
-// the screen content changes, so it never gets left behind as a stray lit
-// cell. Must be called before cursor_col/cursor_row change.
+// the screen content changes. Must be called before cursor_col/cursor_row
+// change or any cell is rewritten.
 static void hide_cursor(void) {
     if (cursor_shown) {
         draw_cursor_cell(false);
@@ -254,26 +274,65 @@ static void hide_cursor(void) {
     }
 }
 
-static void scroll_console(void) {
-    memmove(&framebuf[0][0], &framebuf[CHAR_CELL_H][0],
-            (MODE_V_ACTIVE_LINES - CHAR_CELL_H) * MODE_H_ACTIVE_PIXELS);
-    memset(&framebuf[MODE_V_ACTIVE_LINES - CHAR_CELL_H][0], cur_bg,
-           CHAR_CELL_H * MODE_H_ACTIVE_PIXELS);
+static void shadow_fill(void) {
+    memset(sh_ch, ' ', sizeof(sh_ch));
+    memset(sh_fg, cur_fg, sizeof(sh_fg));
+    memset(sh_bg, cur_bg, sizeof(sh_bg));
+}
+
+// Scrolls the text rows top..bottom (inclusive) by n lines. up: content moves
+// up (new blank rows appear at the bottom); otherwise it moves down.
+static void region_scroll(int top, int bottom, int n, bool up) {
+    int rows = bottom - top + 1;
+    if (n > rows) n = rows;
+    if (n <= 0) return;
+    int keep = rows - n;
+    int px_row = CHAR_CELL_H * MODE_H_ACTIVE_PIXELS;
+    int blank_first;
+    if (up) {
+        if (keep) {
+            memmove(&framebuf[top * CHAR_CELL_H][0], &framebuf[(top + n) * CHAR_CELL_H][0], keep * px_row);
+            memmove(sh_ch[top], sh_ch[top + n], keep * DVI_COLS);
+            memmove(sh_fg[top], sh_fg[top + n], keep * DVI_COLS);
+            memmove(sh_bg[top], sh_bg[top + n], keep * DVI_COLS);
+        }
+        blank_first = top + keep;
+    } else {
+        if (keep) {
+            memmove(&framebuf[(top + n) * CHAR_CELL_H][0], &framebuf[top * CHAR_CELL_H][0], keep * px_row);
+            memmove(sh_ch[top + n], sh_ch[top], keep * DVI_COLS);
+            memmove(sh_fg[top + n], sh_fg[top], keep * DVI_COLS);
+            memmove(sh_bg[top + n], sh_bg[top], keep * DVI_COLS);
+        }
+        blank_first = top;
+    }
+    memset(&framebuf[blank_first * CHAR_CELL_H][0], cur_bg, n * px_row);
+    memset(sh_ch[blank_first], ' ', n * DVI_COLS);
+    memset(sh_fg[blank_first], cur_fg, n * DVI_COLS);
+    memset(sh_bg[blank_first], cur_bg, n * DVI_COLS);
+}
+
+// Blanks cells [c0, c1) of one row with the current background.
+static void erase_cells(int row, int c0, int c1) {
+    for (int c = c0; c < c1; c++) draw_char_at(c, row, ' ', cur_fg, cur_bg);
 }
 
 void dvi_clear(void) {
     memset(framebuf, cur_bg, sizeof(framebuf));
+    shadow_fill();
     cursor_col = 0;
     cursor_row = 0;
+    wrap_pending = false;
     cursor_shown = false; // already blank, nothing to retract
     next_blink = make_timeout_time_ms(CURSOR_BLINK_MS);
 }
 
 static void newline(void) {
+    wrap_pending = false;
     cursor_col = 0;
     cursor_row++;
     if (cursor_row >= DVI_ROWS) {
-        scroll_console();
+        region_scroll(0, DVI_ROWS - 1, 1, true);
         cursor_row = DVI_ROWS - 1;
     }
 }
@@ -285,10 +344,14 @@ void dvi_putc(char c) {
         newline();
         return;
     case '\r':
+        wrap_pending = false;
         cursor_col = 0;
         return;
     case '\b':
-        if (cursor_col > 0) {
+        if (wrap_pending) { // cursor is logically past the last cell: erase it
+            wrap_pending = false;
+            draw_char_at(cursor_col, cursor_row, ' ', cur_fg, cur_bg);
+        } else if (cursor_col > 0) {
             cursor_col--;
             draw_char_at(cursor_col, cursor_row, ' ', cur_fg, cur_bg);
         }
@@ -296,11 +359,10 @@ void dvi_putc(char c) {
     default:
         break;
     }
+    if (wrap_pending) newline();
     draw_char_at(cursor_col, cursor_row, c, cur_fg, cur_bg);
-    cursor_col++;
-    if (cursor_col >= DVI_COLS) {
-        newline();
-    }
+    if (cursor_col >= DVI_COLS - 1) wrap_pending = true;
+    else cursor_col++;
 }
 
 void dvi_puts(const char *s) {
@@ -308,7 +370,68 @@ void dvi_puts(const char *s) {
 }
 
 int dvi_get_col(void) {
-    return cursor_col;
+    return cursor_col + (wrap_pending ? 1 : 0);
+}
+
+int dvi_get_row(void) {
+    return cursor_row;
+}
+
+void dvi_goto(int col, int row) {
+    hide_cursor();
+    if (col < 0) col = 0;
+    if (col >= DVI_COLS) col = DVI_COLS - 1;
+    if (row < 0) row = 0;
+    if (row >= DVI_ROWS) row = DVI_ROWS - 1;
+    cursor_col = col;
+    cursor_row = row;
+    wrap_pending = false;
+}
+
+void dvi_get_colors(uint8_t *fg, uint8_t *bg) {
+    *fg = cur_fg;
+    *bg = cur_bg;
+}
+
+void dvi_erase_display(int mode) {
+    hide_cursor();
+    if (mode == 2 || mode == 3) {
+        memset(framebuf, cur_bg, sizeof(framebuf));
+        shadow_fill();
+    } else if (mode == 0) {
+        erase_cells(cursor_row, cursor_col, DVI_COLS);
+        for (int r = cursor_row + 1; r < DVI_ROWS; r++) erase_cells(r, 0, DVI_COLS);
+    } else {
+        for (int r = 0; r < cursor_row; r++) erase_cells(r, 0, DVI_COLS);
+        erase_cells(cursor_row, 0, cursor_col + 1);
+    }
+}
+
+void dvi_erase_line(int mode) {
+    hide_cursor();
+    if (mode == 0)      erase_cells(cursor_row, cursor_col, DVI_COLS);
+    else if (mode == 1) erase_cells(cursor_row, 0, cursor_col + 1);
+    else                erase_cells(cursor_row, 0, DVI_COLS);
+}
+
+void dvi_erase_chars(int n) {
+    hide_cursor();
+    int end = cursor_col + n;
+    erase_cells(cursor_row, cursor_col, end > DVI_COLS ? DVI_COLS : end);
+}
+
+void dvi_insert_lines(int n) {
+    hide_cursor();
+    region_scroll(cursor_row, DVI_ROWS - 1, n, false);
+    cursor_col = 0;
+    wrap_pending = false;
+}
+
+void dvi_delete_lines(int n) {
+    hide_cursor();
+    region_scroll(cursor_row, DVI_ROWS - 1, n, true);
+    cursor_col = 0;
+    wrap_pending = false;
 }
 
 void dvi_cursor_tick(void) {

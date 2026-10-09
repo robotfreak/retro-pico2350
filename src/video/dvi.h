@@ -26,6 +26,18 @@ void dvi_set_colors(uint8_t fg, uint8_t bg);
 
 uint8_t dvi_rgb332(uint8_t r, uint8_t g, uint8_t b);
 
+// Cursor positioning and screen editing (0-based coordinates, clamped to the
+// screen). Used by the ANSI terminal emulation.
+int  dvi_get_row(void);
+void dvi_goto(int col, int row);
+void dvi_get_colors(uint8_t *fg, uint8_t *bg);
+// mode: 0 = cursor to end, 1 = start to cursor, 2 = everything (cursor stays).
+void dvi_erase_display(int mode);
+void dvi_erase_line(int mode);
+void dvi_erase_chars(int n);        // blank n cells from the cursor
+void dvi_insert_lines(int n);       // at cursor row, pushes the rest down
+void dvi_delete_lines(int n);       // at cursor row, pulls the rest up
+
 // Current cursor column (0-based), useful for PRINT tab-zone alignment.
 int dvi_get_col(void);
 

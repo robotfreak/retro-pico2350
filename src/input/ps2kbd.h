@@ -24,3 +24,16 @@ int kbd_getc_nonblock(void);
 
 // Blocks (polling) until a character is available.
 char kbd_getc_blocking(void);
+
+// Special (non-ASCII) key codes returned by kbd_getc_nonblock(). They are all
+// >= 0x80, so text-only consumers ignore them.
+#define KBD_KEY_UP    0x80
+#define KBD_KEY_DOWN  0x81
+#define KBD_KEY_RIGHT 0x82
+#define KBD_KEY_LEFT  0x83
+#define KBD_KEY_HOME  0x84
+#define KBD_KEY_END   0x85
+#define KBD_KEY_DEL   0x86
+#define KBD_KEY_INS   0x87
+#define KBD_KEY_PGUP  0x88
+#define KBD_KEY_PGDN  0x89

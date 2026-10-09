@@ -201,11 +201,16 @@ Zeilennummerierte BASIC im Tiny-BASIC-Stil:
   Tastatureingaben gehen direkt an den Server, die Antwort erscheint auf dem
   Bildschirm. `ESC` beendet die Sitzung und kehrt zu `READY` zurück.
   Unterstützt eine minimale Telnet-Verhandlung (lehnt alle Optionen ab, um
-  Hänger zu vermeiden) sowie ein kleines Subset von ANSI-Escape-Codes
-  (Textfarbe via `ESC[…m`, Bildschirm löschen via `ESC[…J`/`H`). Cursor-
-  Positionierung (`ESC[row;colH`) wird **nicht** nachgebildet — viele
-  BBS-Menüs bleiben trotzdem gut lesbar, vollständige ANSI-Art-Bildschirme
-  eher nicht.
+  Hänger zu vermeiden) und eine ANSI/VT100-Emulation (`src/net/ansi.c`):
+  Cursor-Positionierung und -Bewegung (`ESC[row;colH`, `A`/`B`/`C`/`D`,
+  `E`/`F`/`G`/`d`, Speichern/Wiederherstellen), Löschen (`J`, `K`, `X`),
+  Zeilen einfügen/löschen (`L`/`M`), Farben (`SGR`: 16 Farben, Fett,
+  Invers, Hintergrund) sowie die Positionsabfrage `ESC[6n`, mit der BBSe
+  die ANSI-Unterstützung erkennen. Pfeiltasten, Pos1/Ende, Entf/Einfg und
+  Bild auf/ab werden als Escape-Sequenzen gesendet. Zeichen ≥ 0x80 (CP437,
+  z.B. Rahmen- und Blockzeichen) werden durch ASCII-Ersatzzeichen dargestellt
+  (`|`, `-`, `+`, `#`, ...), da der Font nur ASCII enthält. Nicht umgesetzt:
+  Scroll-Bereiche, Einfügen/Löschen von Zeichen, UTF-8, 256-/TrueColor.
 
 **Bekannte Einschränkungen (bewusste Vereinfachungen für v1):**
 - `GOSUB`/`FOR` sollten jeweils die einzige/letzte Anweisung ihrer Zeile
@@ -242,7 +247,8 @@ retro-pico2350/
       hw_config.c             SPI/Pin-Konfiguration für die SD-Karten-Bibliothek
       sdcard.c / .h           Mount + Datei-Hilfsfunktionen (FatFs-Wrapper)
     net/
-      net.c / .h              UART-Client zur Backplane + Telnet-Terminal-Logik
+      net.c / .h              UART-Client zur Backplane + Telnet-Sitzung
+      ansi.c / .h             ANSI/VT100-Terminalemulation
     proto/
       bp_proto.h              Frame-Format + Befehle (von beiden Firmwares genutzt)
       bp_link.c / .h          UART-Transport mit IRQ-Ringpuffer

@@ -97,9 +97,25 @@ void kbd_poll(void) {
             continue;
         }
         if (extended) {
-            // Ignore extended keys (arrows, numpad enter, right ctrl/alt, ...)
             extended = false;
-            release = false;
+            if (release) { // key-up of an extended key
+                release = false;
+                continue;
+            }
+            switch (code) {
+            case 0x75: kbuf_push((char)KBD_KEY_UP); break;
+            case 0x72: kbuf_push((char)KBD_KEY_DOWN); break;
+            case 0x74: kbuf_push((char)KBD_KEY_RIGHT); break;
+            case 0x6B: kbuf_push((char)KBD_KEY_LEFT); break;
+            case 0x6C: kbuf_push((char)KBD_KEY_HOME); break;
+            case 0x69: kbuf_push((char)KBD_KEY_END); break;
+            case 0x71: kbuf_push((char)KBD_KEY_DEL); break;
+            case 0x70: kbuf_push((char)KBD_KEY_INS); break;
+            case 0x7D: kbuf_push((char)KBD_KEY_PGUP); break;
+            case 0x7A: kbuf_push((char)KBD_KEY_PGDN); break;
+            case 0x5A: kbuf_push('\n'); break; // numpad enter
+            default: break; // right ctrl/alt, ...
+            }
             continue;
         }
         if (release) {

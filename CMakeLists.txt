@@ -32,6 +32,7 @@ add_executable(retro_pico2350
     src/input/ps2mouse.c
     src/basic/basic.c
     src/net/net.c
+    src/net/ansi.c
     src/proto/bp_link.c
     src/storage/sdcard.c
     src/storage/hw_config.c
