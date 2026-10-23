@@ -33,6 +33,7 @@ add_executable(retro_pico2350
     src/basic/basic.c
     src/net/net.c
     src/net/ansi.c
+    src/audio/audio.c
     src/proto/bp_link.c
     src/storage/sdcard.c
     src/storage/hw_config.c
@@ -48,6 +49,7 @@ target_include_directories(retro_pico2350 PRIVATE
     src/input
     src/basic
     src/net
+    src/audio
     src/storage
     src/proto
 )
@@ -60,6 +62,7 @@ target_link_libraries(retro_pico2350
     hardware_clocks
     hardware_spi
     hardware_uart
+    hardware_i2c
     no-OS-FatFS-SD-SDIO-SPI-RPi-Pico
 )
 

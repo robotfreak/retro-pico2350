@@ -9,6 +9,8 @@
 //   Debug UART0         : GPIO 0 (TX), GPIO 1 (RX) - 115200 8N1
 //   Backplane link UART1: GPIO 20 (TX), GPIO 21 (RX) - to the Pico 2 W
 //                         running backplane/ (WiFi + TCP/IP), see net.c
+//   Audio I2C1          : GPIO 6 (SDA), GPIO 7 (SCL) - to the Pico 2 running
+//                         audio/ (Pimoroni Audio Pack), see audio.c
 //
 
 #include "pico/stdlib.h"
@@ -19,6 +21,7 @@
 #include "ps2mouse.h"
 #include "basic.h"
 #include "net.h"
+#include "audio.h"
 
 #define KBD_PIO     0
 #define KBD_DATA_GPIO 2
@@ -47,6 +50,10 @@ int main(void) {
     printf("net_init...\n"); stdio_flush();
     bool wifi_ready = net_init(); // talks to the backplane controller
     printf("net_init done (backplane %s)\n", wifi_ready ? "ok" : "NOT FOUND"); stdio_flush();
+
+    printf("audio_init...\n"); stdio_flush();
+    audio_init();
+    printf("audio_init done (audio %s)\n", audio_ready() ? "ok" : "NOT FOUND"); stdio_flush();
 
     dvi_puts(wifi_ready ? "BACKPLANE OK\n" : "BACKPLANE NOT FOUND\n");
     printf("basic_init...\n"); stdio_flush();

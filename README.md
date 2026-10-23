@@ -111,6 +111,44 @@ vielen Hobby-PS/2-Projekten, aber *keine* offizielle Spezifikation — ein
 richtiger bidirektionaler Pegelwandler (z.B. 74LVC245 oder diskret mit
 MOSFETs) ist die sauberere, sicherere Lösung.
 
+### Audio: separater Audio-Controller (Pico 2 + Pimoroni Pico Audio Pack) über I2C
+
+Der Ton kommt von einem dritten Board: einem Pico 2 mit dem
+[Pimoroni Pico Audio Pack](https://shop.pimoroni.com/products/pico-audio-pack)
+(Firmware in `audio/`, benötigt [pico-extras](https://github.com/raspberrypi/pico-extras)).
+Es ist I2C-Slave (Adresse 0x2A), der Hauptcontroller ist Master
+(Protokoll: `src/proto/audio_proto.h`).
+
+| Hauptcontroller (Pico 2) | Audio-Controller (Pico 2) |
+|--------------------------|---------------------------|
+| GPIO 6 (I2C1 SDA)        | GPIO 4 (I2C0 SDA)         |
+| GPIO 7 (I2C1 SCL)        | GPIO 5 (I2C0 SCL)         |
+| GND                      | GND                       |
+
+Pull-ups 2,2–4,7 kΩ nach 3,3 V an SDA/SCL empfohlen (intern sind nur schwache
+aktiv). Das Audio Pack belegt auf dem Audio-Pico GPIO 9–11 (I2S). Ohne
+Audio-Controller läuft alles andere normal, Audio-Befehle melden `?NO AUDIO`.
+
+Bauen: `cd audio && cmake -S . -B build -G Ninja && ninja -C build`
+(`PICO_SDK_PATH` setzen; pico-extras-Pfad per `-DPICO_EXTRAS_PATH=...`).
+`audiotest/` ist ein eigenständiger Hardware-Test mit dem Pimoroni-Demo-Song.
+
+BASIC-Befehle (8 Kanäle, 0–7):
+
+- `SOUND ch, freq` — Ton starten (Hz); `freq` = 0 beendet den Ton.
+- `VOICE ch, wellen [, attack_ms, decay_ms, sustain%, release_ms, lautst%]` —
+  Klangfarbe. Wellenformen als Bitmaske: 1 Sinus, 2 Rechteck, 4 Sägezahn,
+  8 Dreieck, 16 Rauschen (kombinierbar). Standard: Rechteck, 5/100/70/100/100.
+- `VOLUME v` — Gesamtlautstärke 0–100.
+- `QUIET` — alle Kanäle ausklingen lassen.
+
+```
+10 VOICE 0,8,10,100,60,300
+20 SOUND 0,440
+30 FOR I=1 TO 2000:NEXT I
+40 SOUND 0,0
+```
+
 ### Debug-UART (optional)
 
 UART0 auf GPIO 0 (TX) / GPIO 1 (RX), 115200 8N1 — für `printf`-Debugging,

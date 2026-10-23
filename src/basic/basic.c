@@ -2,6 +2,8 @@
 #include "dvi.h"
 #include "ps2kbd.h"
 #include "net.h"
+#include "audio.h"
+#include "audio_proto.h"
 #include "sdcard.h"
 #include "ff.h"
 
@@ -509,6 +511,40 @@ static Action exec_one_statement(const char **p, bool in_program, int current_li
         int port = 23;
         if (**p == ',') { (*p)++; port = (int)parse_expr(p); }
         net_telnet_session(host, (uint16_t)port);
+        return ACT_NONE;
+    }
+
+    if (match_keyword(p, "SOUND")) {
+        int ch = (int)parse_expr(p);
+        skip_spaces(p);
+        if (**p != ',') ERROR("?SYNTAX ERROR");
+        (*p)++;
+        int freq = (int)parse_expr(p);
+        if (ch < 0 || ch >= AUDIO_CHANNELS) ERROR("?ILLEGAL CHANNEL");
+        if (!(freq > 0 ? audio_note_on(ch, freq) : audio_note_off(ch))) dvi_puts("?NO AUDIO\n");
+        return ACT_NONE;
+    }
+    if (match_keyword(p, "VOICE")) {
+        // VOICE ch, waves [, attack_ms, decay_ms, sustain%, release_ms, volume%]
+        int v[7] = { 0, AUDIO_WAVE_SQUARE, 5, 100, 70, 100, 100 };
+        v[0] = (int)parse_expr(p);
+        for (int i = 1; i < 7; i++) {
+            skip_spaces(p);
+            if (**p != ',') { if (i == 1) ERROR("?SYNTAX ERROR"); break; }
+            (*p)++;
+            v[i] = (int)parse_expr(p);
+        }
+        if (v[0] < 0 || v[0] >= AUDIO_CHANNELS) ERROR("?ILLEGAL CHANNEL");
+        if (!audio_voice(v[0], v[1], v[2], v[3], v[4], v[5], v[6])) dvi_puts("?NO AUDIO\n");
+        return ACT_NONE;
+    }
+    if (match_keyword(p, "VOLUME")) {
+        int pct = (int)parse_expr(p);
+        if (!audio_master_volume(pct)) dvi_puts("?NO AUDIO\n");
+        return ACT_NONE;
+    }
+    if (match_keyword(p, "QUIET")) {
+        if (!audio_all_off()) dvi_puts("?NO AUDIO\n");
         return ACT_NONE;
     }
 
